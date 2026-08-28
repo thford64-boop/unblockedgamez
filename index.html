@@ -1715,6 +1715,621 @@ var GAMES = [
       }
     };
   }
+},
+/* ---------------------------------------------------------------- dash */
+{
+  id:'dash', name:'Dash', kind:'Endless',
+  blurb:'One button, no checkpoints, no finish line. Spikes, blocks and gaps, forever.',
+  hint:'Space, click or tap to jump · hold to jump again the moment you land',
+  w:640, h:340,
+  icon:function(g){
+    g.fillStyle=IC.line; g.fillRect(0,37,44,7);
+    g.save(); g.translate(11,20); g.rotate(0.45);
+    g.fillStyle=IC.acc; g.fillRect(-9,-9,18,18); g.restore();
+    g.fillStyle=IC.soft;
+    g.beginPath(); g.moveTo(25,37); g.lineTo(32,20); g.lineTo(39,37); g.closePath(); g.fill();
+  },
+  make:function(env){
+    var W=env.W, H=env.H, T=44, GY=H-72, PX=120, SZ=26;
+    var JV=-560, G=1900, AIR=2*560/1900;
+    var sp=330, dist=0, y=GY, vy=0, air=false, rot=0, sc=0;
+    var obs=[], nextX=W*0.85, trail=[];
+    function gen(){
+      var k=Math.random(), len=0, i;
+      if(k<0.32){
+        var n=randi(1,3);
+        for(i=0;i<n;i++) obs.push({t:'s', x:nextX+i*T, w:T, h:34});
+        len=n*T;
+      } else if(k<0.60){
+        var bw=T*randi(2,4), bh=34*randi(1,3);
+        obs.push({t:'b', x:nextX, w:bw, h:bh});
+        len=bw;
+      } else if(k<0.80){
+        var pw=T*randi(1,3);
+        obs.push({t:'p', x:nextX, w:pw, h:0});
+        len=pw;
+      } else {
+        obs.push({t:'b', x:nextX, w:T*2, h:34});
+        obs.push({t:'s', x:nextX+T*3, w:T, h:34});
+        len=T*4;
+      }
+      nextX += len + Math.max(3*T, AIR*sp + 90);
+    }
+    return {
+      update:function(dt){
+        var want = env.keys[' ']||env.keys['arrowup']||env.keys['w']||env.ptr.down;
+        sp += dt*4.5; dist += sp*dt;
+        var s=Math.floor(dist/30);
+        if(s!==sc){ sc=s; env.setScore(sc); }
+        while(nextX < dist + W + 300) gen();
+        while(obs.length && obs[0].x + obs[0].w < dist - 100) obs.shift();
+        var wx = dist + PX, i, o, floorY = GY;
+        for(i=0;i<obs.length;i++){
+          o=obs[i];
+          if(o.t==='p' && wx+SZ/2 > o.x+5 && wx-SZ/2 < o.x+o.w-5) floorY = 1e9;
+        }
+        var prev=y;
+        if(!air && want){ vy=JV; air=true; }
+        vy += G*dt; y += vy*dt;
+        for(i=0;i<obs.length;i++){
+          o=obs[i]; if(o.t!=='b') continue;
+          if(wx+SZ/2 > o.x && wx-SZ/2 < o.x+o.w){
+            var top=GY-o.h;
+            if(prev <= top+2 && y >= top){ if(top<floorY) floorY=top; }
+            else if(y > top) return env.end('You ran into a block');
+          }
+        }
+        if(y >= floorY){
+          y=floorY; vy=0;
+          if(air){ air=false; rot=Math.round(rot/(Math.PI/2))*(Math.PI/2); }
+        } else air=true;
+        for(i=0;i<obs.length;i++){
+          o=obs[i]; if(o.t!=='s') continue;
+          if(wx+9 > o.x+8 && wx-9 < o.x+o.w-8 && y > GY-o.h+10) return env.end('Spiked');
+        }
+        if(y > H+60) return env.end('You fell in');
+        if(air) rot += (Math.PI*2/AIR)*dt;
+        trail.push({x:PX, y:y, r:rot});
+        if(trail.length>9) trail.shift();
+        for(var t=0;t<trail.length;t++) trail[t].x -= sp*dt;
+      },
+      draw:function(g){
+        g.fillStyle=P.bg; g.fillRect(0,0,W,H);
+        var i, o, sx;
+        g.fillStyle=P.panel;
+        for(i=0;i<9;i++){
+          var gx = W - ((dist*0.35 + i*90) % (W+90));
+          g.fillRect(gx, 0, 2, GY);
+        }
+        g.fillStyle=P.grid; g.fillRect(0, GY, W, H-GY);
+        g.fillStyle=P.line; g.fillRect(0, GY, W, 2);
+        for(i=0;i<obs.length;i++){
+          o=obs[i]; if(o.t!=='p') continue;
+          sx=o.x-dist;
+          g.fillStyle='#0F1214'; g.fillRect(sx, GY, o.w, H-GY);
+        }
+        for(i=0;i<obs.length;i++){
+          o=obs[i]; sx=o.x-dist;
+          if(o.t==='b'){
+            fillR(g, sx, GY-o.h, o.w, o.h, 2, P.acc);
+            g.fillStyle='rgba(20,23,26,.35)';
+            g.fillRect(sx+6, GY-o.h+6, o.w-12, o.h-12);
+          } else if(o.t==='s'){
+            g.fillStyle=P.hot;
+            g.beginPath();
+            g.moveTo(sx+3, GY); g.lineTo(sx+o.w/2, GY-o.h); g.lineTo(sx+o.w-3, GY);
+            g.closePath(); g.fill();
+          }
+        }
+        for(i=0;i<trail.length;i++){
+          g.globalAlpha = i/trail.length*0.35;
+          g.save(); g.translate(trail[i].x, trail[i].y-SZ/2); g.rotate(trail[i].r);
+          g.fillStyle=P.acc; g.fillRect(-SZ/2,-SZ/2,SZ,SZ); g.restore();
+        }
+        g.globalAlpha=1;
+        g.save(); g.translate(PX, y-SZ/2); g.rotate(rot);
+        g.fillStyle=P.ink; g.fillRect(-SZ/2,-SZ/2,SZ,SZ);
+        g.fillStyle=P.acc; g.fillRect(-SZ/2+5,-SZ/2+5,SZ-10,SZ-10);
+        g.restore();
+        text(g,'SPEED '+Math.round(sp), 14, 20, 11, P.dim);
+      }
+    };
+  }
+},
+/* ---------------------------------------------------------------- loop */
+{
+  id:'loop', name:'Loop', kind:'Puzzle',
+  blurb:'Ten seconds, then time rewinds and your last run replays beside you. Work with yourself.',
+  hint:'Arrows / WASD or drag · R rewinds early',
+  w:520, h:440,
+  icon:function(g){
+    g.strokeStyle=IC.line; g.lineWidth=3;
+    g.beginPath(); g.arc(22,23,15,0.5,5.6); g.stroke();
+    g.fillStyle=IC.line;
+    g.beginPath(); g.moveTo(34,4); g.lineTo(37,15); g.lineTo(27,13); g.closePath(); g.fill();
+    g.fillStyle=IC.acc; g.beginPath(); g.arc(22,23,5,0,7); g.fill();
+    g.fillStyle=IC.soft; g.beginPath(); g.arc(11,32,4,0,7); g.fill();
+  },
+  make:function(env){
+    var W=env.W, H=env.H, CS=40, COLS=13, ROWS=10, OY=40, SPD=132, STEP=1/60, LOOPN=600;
+    var LEVELS=[
+      ['#############','#@..........#','#...........#','#.....#.....#','#..p..#..X..#',
+       '#.....#.....#','#...........#','#...........#','#...........#','#############'],
+      ['#############','#@..........#','#...........#','#.p.......p.#','#...........#',
+       '#..#######..#','#...........#','#.....X.....#','#...........#','#############'],
+      ['#############','#@....p.....#','#...........#','#..###.###..#','#p.#.....#.p#',
+       '#..#..X..#..#','#..#.....#..#','#..#######..#','#...........#','#############']
+    ];
+    var li=0, walls=[], plates=[], exit={x:0,y:0}, spawn={x:0,y:0};
+    var px=0, py=0, ghosts=[], rec=[], stepN=0, acc=0, loops=1, done=false;
+    function load(i){
+      var m=LEVELS[i], x, y;
+      walls=[]; plates=[];
+      for(y=0;y<ROWS;y++) for(x=0;x<COLS;x++){
+        var ch=m[y].charAt(x);
+        walls.push(ch==='#');
+        if(ch==='p') plates.push({x:x*CS+CS/2, y:y*CS+CS/2});
+        if(ch==='X'){ exit.x=x*CS+CS/2; exit.y=y*CS+CS/2; }
+        if(ch==='@'){ spawn.x=x*CS+CS/2; spawn.y=y*CS+CS/2; }
+      }
+      ghosts=[]; rec=[]; stepN=0; loops=1; acc=0;
+      px=spawn.x; py=spawn.y;
+    }
+    load(0);
+    function hits(x,y){
+      var r=12, a=Math.floor((x-r)/CS), b=Math.floor((x+r)/CS);
+      var c=Math.floor((y-r)/CS), d=Math.floor((y+r)/CS), gx, gy;
+      for(gy=c;gy<=d;gy++) for(gx=a;gx<=b;gx++){
+        if(gx<0||gy<0||gx>=COLS||gy>=ROWS) return true;
+        if(walls[gy*COLS+gx]) return true;
+      }
+      return false;
+    }
+    function ghostAt(gi, s){
+      var gr=ghosts[gi], k=s*2;
+      if(k+1 >= gr.length) k = gr.length-2;
+      if(k<0) return null;
+      return [gr[k], gr[k+1]];
+    }
+    function newLoop(){
+      if(rec.length) ghosts.push(rec);
+      if(ghosts.length>5) ghosts.shift();
+      rec=[]; stepN=0; loops++;
+      px=spawn.x; py=spawn.y;
+    }
+    function tick(){
+      var dx=(env.keys['arrowright']||env.keys['d']?1:0)-(env.keys['arrowleft']||env.keys['a']?1:0);
+      var dy=(env.keys['arrowdown']||env.keys['s']?1:0)-(env.keys['arrowup']||env.keys['w']?1:0);
+      if(env.ptr.down){
+        var tx=env.ptr.x-px, ty=(env.ptr.y-OY)-py, m=Math.sqrt(tx*tx+ty*ty);
+        if(m>7){ dx=tx/m; dy=ty/m; } else { dx=0; dy=0; }
+      } else if(dx&&dy){ dx*=0.7071; dy*=0.7071; }
+      var nx=px+dx*SPD*STEP; if(!hits(nx,py)) px=nx;
+      var ny=py+dy*SPD*STEP; if(!hits(px,ny)) py=ny;
+      rec.push(px, py);
+      var bodies=[[px,py]], i, j;
+      for(i=0;i<ghosts.length;i++){ var gp=ghostAt(i, stepN); if(gp) bodies.push(gp); }
+      var open=true;
+      for(i=0;i<plates.length;i++){
+        var on=false;
+        for(j=0;j<bodies.length;j++)
+          if(Math.abs(bodies[j][0]-plates[i].x)<16 && Math.abs(bodies[j][1]-plates[i].y)<16) on=true;
+        plates[i].on=on;
+        if(!on) open=false;
+      }
+      if(open && Math.abs(px-exit.x)<15 && Math.abs(py-exit.y)<15){
+        li++; env.setScore(li);
+        if(li>=LEVELS.length){ done=true; env.end('Every loop closed'); }
+        else load(li);
+        return;
+      }
+      stepN++;
+      if(stepN>=LOOPN) newLoop();
+    }
+    return {
+      key:function(k,d){ if(d && k==='r') newLoop(); },
+      update:function(dt){
+        if(done) return;
+        acc += dt;
+        var n=0;
+        while(acc>=STEP && n<6 && !done){ acc-=STEP; tick(); n++; }
+        if(acc>0.5) acc=0;
+      },
+      draw:function(g){
+        g.fillStyle=P.bg; g.fillRect(0,0,W,H);
+        var x, y, i;
+        text(g,'LEVEL '+(li+1)+' / '+LEVELS.length, 14, 16, 11, P.dim);
+        text(g,'LOOP '+loops, 150, 16, 11, P.acc);
+        text(g, plates.length+' PLATE'+(plates.length>1?'S':''), W-14, 16, 11, P.dim, 'right');
+        g.fillStyle=P.grid; g.fillRect(14, 27, W-28, 4);
+        g.fillStyle=P.acc; g.fillRect(14, 27, (W-28)*(stepN/LOOPN), 4);
+        for(y=0;y<ROWS;y++) for(x=0;x<COLS;x++){
+          if(walls[y*COLS+x]) fillR(g, x*CS, OY+y*CS, CS-1, CS-1, 2, P.line);
+          else { g.fillStyle=P.panel; g.fillRect(x*CS+1, OY+y*CS+1, CS-3, CS-3); }
+        }
+        var allOn=true;
+        for(i=0;i<plates.length;i++){
+          if(!plates[i].on) allOn=false;
+          fillR(g, plates[i].x-14, OY+plates[i].y-14, 28, 28, 4, plates[i].on?P.good:P.grid);
+          g.strokeStyle=plates[i].on?P.good:P.dim; g.lineWidth=2;
+          rrect(g, plates[i].x-14, OY+plates[i].y-14, 28, 28, 4); g.stroke();
+        }
+        g.strokeStyle=allOn?P.gold:P.hot; g.lineWidth=3;
+        rrect(g, exit.x-15, OY+exit.y-15, 30, 30, 4); g.stroke();
+        if(allOn){ g.fillStyle=P.gold; g.globalAlpha=0.3; g.fillRect(exit.x-13, OY+exit.y-13, 26, 26); g.globalAlpha=1; }
+        else { g.fillStyle=P.hot; g.fillRect(exit.x-8, OY+exit.y-2, 16, 4); }
+        for(i=0;i<ghosts.length;i++){
+          var gp=ghostAt(i, stepN); if(!gp) continue;
+          g.globalAlpha=0.42;
+          g.fillStyle=P.dim; g.beginPath(); g.arc(gp[0], OY+gp[1], 11, 0, 7); g.fill();
+          g.globalAlpha=1;
+        }
+        g.fillStyle=P.acc; g.beginPath(); g.arc(px, OY+py, 12, 0, 7); g.fill();
+        g.fillStyle=P.bg; g.beginPath(); g.arc(px+4, OY+py-3, 3, 0, 7); g.fill();
+      }
+    };
+  }
+},
+/* ---------------------------------------------------------------- orbit */
+{
+  id:'orbit', name:'Orbit', kind:'Endless',
+  blurb:'Hold to swing around a pin, let go to fly to the next one. Nothing catches you.',
+  hint:'Hold space, click or touch to grab · release to launch',
+  w:560, h:360,
+  icon:function(g){
+    g.strokeStyle=IC.soft; g.lineWidth=1.5;
+    g.beginPath(); g.arc(16,20,13,0,7); g.stroke();
+    g.fillStyle=IC.line; g.beginPath(); g.arc(16,20,4,0,7); g.fill();
+    g.strokeStyle=IC.line; g.lineWidth=2;
+    g.beginPath(); g.moveTo(16,20); g.lineTo(27,27); g.stroke();
+    g.fillStyle=IC.acc; g.beginPath(); g.arc(28,28,5,0,7); g.fill();
+  },
+  make:function(env){
+    var W=env.W, H=env.H;
+    var S=250, cam=0, anchors=[{x:200,y:H/2}], nextX=380;
+    var at=0, ang=Math.PI/2, dir=-1, r=72, sc=0, rel=0, trail=[];
+    var px=anchors[0].x, py=anchors[0].y+r, vx=S, vy=0;
+    function genAhead(){
+      while(nextX < cam + W + 340){
+        anchors.push({x:nextX, y:rand(72,H-72)});
+        nextX += rand(150,220);
+      }
+    }
+    genAhead();
+    function release(){
+      if(at<0) return;
+      vx = -Math.sin(ang)*dir*S; vy = Math.cos(ang)*dir*S;
+      at=-1; rel=0.12;
+    }
+    function grab(){
+      var best=-1, bd=1e9, i;
+      for(i=0;i<anchors.length;i++){
+        var a=anchors[i], dx=px-a.x, dy=py-a.y, d=Math.sqrt(dx*dx+dy*dy);
+        if(d>=36 && d<=128 && d<bd){ bd=d; best=i; }
+      }
+      if(best<0) return;
+      var an=anchors[best];
+      at=best; r=bd; ang=Math.atan2(py-an.y, px-an.x);
+      dir = (vx*(-Math.sin(ang)) + vy*Math.cos(ang)) >= 0 ? 1 : -1;
+      if(!an.hit){ an.hit=true; sc++; env.setScore(sc); }
+    }
+    return {
+      update:function(dt){
+        var hold = env.ptr.down || env.keys[' '] || env.keys['arrowup'] || env.keys['w'];
+        S += dt*3;
+        if(at>=0){
+          if(!hold) release();
+          else {
+            var a=anchors[at];
+            ang += dir*(S/r)*dt;
+            px = a.x + Math.cos(ang)*r; py = a.y + Math.sin(ang)*r;
+            vx = -Math.sin(ang)*dir*S; vy = Math.cos(ang)*dir*S;
+          }
+        } else {
+          px += vx*dt; py += vy*dt;
+          rel -= dt;
+          if(hold && rel<=0) grab();
+        }
+        cam += (26 + sc*0.7)*dt;
+        if(px-280 > cam) cam = px-280;
+        genAhead();
+        while(anchors.length && anchors[0].x < cam-140){
+          anchors.shift();
+          if(at>=0) at--;
+        }
+        trail.push({x:px,y:py});
+        if(trail.length>22) trail.shift();
+        if(py<-24 || py>H+24) return env.end('You flew off');
+        if(px < cam-50) return env.end('You fell behind');
+      },
+      draw:function(g){
+        g.fillStyle=P.bg; g.fillRect(0,0,W,H);
+        var i, a, sx;
+        g.fillStyle=P.panel;
+        for(i=0;i<10;i++) g.fillRect(W-((cam*0.4+i*80)%(W+80)), 0, 1, H);
+        for(i=0;i<anchors.length;i++){
+          a=anchors[i]; sx=a.x-cam;
+          if(sx<-60||sx>W+60) continue;
+          g.strokeStyle=P.grid; g.lineWidth=1;
+          g.beginPath(); g.arc(sx, a.y, 34, 0, 7); g.stroke();
+          g.fillStyle=a.hit?P.gold:P.dim;
+          g.beginPath(); g.arc(sx, a.y, 7, 0, 7); g.fill();
+        }
+        if(at>=0 && anchors[at]){
+          a=anchors[at];
+          g.strokeStyle=P.grid; g.lineWidth=1;
+          g.beginPath(); g.arc(a.x-cam, a.y, r, 0, 7); g.stroke();
+          g.strokeStyle=P.acc; g.lineWidth=2;
+          g.beginPath(); g.moveTo(a.x-cam, a.y); g.lineTo(px-cam, py); g.stroke();
+        }
+        for(i=0;i<trail.length;i++){
+          g.globalAlpha = i/trail.length*0.5;
+          g.fillStyle=P.acc;
+          g.fillRect(trail[i].x-cam-2, trail[i].y-2, 4, 4);
+        }
+        g.globalAlpha=1;
+        g.fillStyle=P.ink; g.beginPath(); g.arc(px-cam, py, 9, 0, 7); g.fill();
+        g.fillStyle=at>=0?P.acc:P.hot; g.beginPath(); g.arc(px-cam, py, 4.5, 0, 7); g.fill();
+        text(g, at>=0?'ATTACHED':'FLYING', 14, 20, 11, at>=0?P.acc:P.hot);
+      }
+    };
+  }
+},
+/* ---------------------------------------------------------------- prism */
+{
+  id:'prism', name:'Prism', kind:'Puzzle',
+  blurb:'Flip the mirrors until the beam reaches every crystal. Five layouts.',
+  hint:'Click or tap a mirror to flip it',
+  w:420, h:470,
+  icon:function(g){
+    g.strokeStyle=IC.acc; g.lineWidth=2;
+    g.beginPath(); g.moveTo(2,10); g.lineTo(32,10); g.lineTo(32,36); g.stroke();
+    g.strokeStyle=IC.line; g.lineWidth=3;
+    g.beginPath(); g.moveTo(26,4); g.lineTo(38,16); g.stroke();
+    g.fillStyle=IC.soft;
+    g.beginPath(); g.moveTo(32,32); g.lineTo(38,38); g.lineTo(32,44); g.lineTo(26,38); g.closePath(); g.fill();
+  },
+  make:function(env){
+    var W=env.W, H=env.H, N=7, CS=48, OX=(W-N*CS)/2, OY=100;
+    var LV=[
+      {e:{x:0,y:3,dx:1,dy:0}, g:['.......','.......','.......','...T...','.......','.......','.......'],
+       m:[{x:3,y:3,s:1}]},
+      {e:{x:1,y:0,dx:0,dy:1}, g:['.......','.......','.......','..###..','.......','.......','.....T.'],
+       m:[{x:1,y:1,s:0},{x:5,y:1,s:0}]},
+      {e:{x:0,y:5,dx:1,dy:0}, g:['.......','..T....','.......','.....T.','.......','.......','.......'],
+       m:[{x:2,y:5,s:1},{x:2,y:3,s:1},{x:6,y:3,s:1},{x:6,y:1,s:0}]},
+      {e:{x:3,y:0,dx:0,dy:1}, g:['.......','.......','.......','.......','T.....T','.......','.......'],
+       m:[{x:3,y:2,s:1},{x:0,y:2,s:1},{x:0,y:6,s:0},{x:6,y:6,s:1}]},
+      {e:{x:0,y:0,dx:1,dy:0}, g:['.......','.......','.......','T.....T','.......','.......','...T...'],
+       m:[{x:6,y:0,s:0},{x:2,y:2,s:0},{x:4,y:4,s:1},{x:0,y:6,s:0},{x:6,y:6,s:0}]}
+    ];
+    var li=0, cells=[], mirrors=[], E=null, moves=0, done=false, beam=null;
+    function load(i){
+      var L=LV[i], x, y;
+      cells=[]; mirrors=[];
+      for(y=0;y<N;y++) for(x=0;x<N;x++) cells.push(L.g[y].charAt(x));
+      for(x=0;x<L.m.length;x++) mirrors.push({x:L.m[x].x, y:L.m[x].y, s:L.m[x].s});
+      E=L.e; moves=0;
+      trace();
+    }
+    function mirrorAt(x,y){
+      for(var i=0;i<mirrors.length;i++) if(mirrors[i].x===x && mirrors[i].y===y) return mirrors[i];
+      return null;
+    }
+    function trace(){
+      var x=E.x, y=E.y, dx=E.dx, dy=E.dy, path=[], hit=[], guard=0, t;
+      while(guard++ < 220){
+        if(x<0||y<0||x>=N||y>=N) break;
+        if(cells[y*N+x]==='#') break;
+        path.push({x:x, y:y});
+        if(cells[y*N+x]==='T' && hit.indexOf(y*N+x)<0) hit.push(y*N+x);
+        var m=mirrorAt(x,y);
+        if(m){
+          if(m.s){ t=dx; dx=-dy; dy=-t; }
+          else { t=dx; dx=dy; dy=t; }
+        }
+        x+=dx; y+=dy;
+      }
+      var total=0;
+      for(var i=0;i<cells.length;i++) if(cells[i]==='T') total++;
+      beam={path:path, hit:hit, endx:x, endy:y, total:total};
+      return hit.length===total;
+    }
+    load(0);
+    return {
+      tap:function(x,y){
+        if(done) return;
+        var gx=Math.floor((x-OX)/CS), gy=Math.floor((y-OY)/CS);
+        var m=mirrorAt(gx,gy);
+        if(!m) return;
+        m.s = m.s ? 0 : 1;
+        moves++;
+        if(trace()){
+          li++; env.setScore(li);
+          if(li>=LV.length){ done=true; env.end('All five beams routed'); }
+          else load(li);
+        }
+      },
+      update:function(){},
+      draw:function(g){
+        g.fillStyle=P.bg; g.fillRect(0,0,W,H);
+        var x, y, i, cx, cy;
+        text(g,'LAYOUT', 24, 40, 11, P.dim);
+        text(g,(li+1)+' / '+LV.length, 24, 60, 18, P.ink);
+        text(g,'CRYSTALS '+beam.hit.length+' / '+beam.total, W-24, 46, 11,
+             beam.hit.length===beam.total?P.gold:P.dim, 'right');
+        text(g,'FLIPS '+moves, W-24, 64, 11, P.dim, 'right');
+        for(y=0;y<N;y++) for(x=0;x<N;x++){
+          cx=OX+x*CS; cy=OY+y*CS;
+          var ch=cells[y*N+x];
+          fillR(g, cx+1, cy+1, CS-2, CS-2, 2, ch==='#'?P.line:P.panel);
+        }
+        g.fillStyle=P.gold;
+        g.beginPath();
+        var ex=OX+E.x*CS+CS/2 - E.dx*CS, ey=OY+E.y*CS+CS/2 - E.dy*CS;
+        g.moveTo(ex+E.dx*11, ey+E.dy*11);
+        g.lineTo(ex-E.dy*9-E.dx*7, ey+E.dx*9-E.dy*7);
+        g.lineTo(ex+E.dy*9-E.dx*7, ey-E.dx*9-E.dy*7);
+        g.closePath(); g.fill();
+        if(beam.path.length){
+          g.strokeStyle=P.gold; g.lineWidth=3; g.globalAlpha=0.9;
+          g.beginPath();
+          g.moveTo(ex, ey);
+          for(i=0;i<beam.path.length;i++)
+            g.lineTo(OX+beam.path[i].x*CS+CS/2, OY+beam.path[i].y*CS+CS/2);
+          g.lineTo(OX+beam.endx*CS+CS/2, OY+beam.endy*CS+CS/2);
+          g.stroke();
+          g.globalAlpha=1;
+        }
+        for(y=0;y<N;y++) for(x=0;x<N;x++){
+          if(cells[y*N+x]!=='T') continue;
+          cx=OX+x*CS+CS/2; cy=OY+y*CS+CS/2;
+          var on=beam.hit.indexOf(y*N+x)>=0;
+          g.fillStyle=on?P.gold:P.dim;
+          g.beginPath();
+          g.moveTo(cx,cy-13); g.lineTo(cx+13,cy); g.lineTo(cx,cy+13); g.lineTo(cx-13,cy);
+          g.closePath(); g.fill();
+          if(on){ g.fillStyle=P.bg; g.beginPath(); g.arc(cx,cy,4,0,7); g.fill(); }
+        }
+        for(i=0;i<mirrors.length;i++){
+          var m=mirrors[i];
+          cx=OX+m.x*CS; cy=OY+m.y*CS;
+          g.strokeStyle=P.aqua; g.lineWidth=5; g.lineCap='round';
+          g.beginPath();
+          if(m.s){ g.moveTo(cx+CS-11, cy+11); g.lineTo(cx+11, cy+CS-11); }
+          else { g.moveTo(cx+11, cy+11); g.lineTo(cx+CS-11, cy+CS-11); }
+          g.stroke();
+        }
+      }
+    };
+  }
+},
+/* ---------------------------------------------------------------- echo */
+{
+  id:'echo', name:'Echo', kind:'Puzzle',
+  blurb:'A maze with the lights off. Each ping paints the walls for a second, then they fade.',
+  hint:'Arrows / WASD or drag to move · Space or the ping pad to look around',
+  w:460, h:480,
+  icon:function(g){
+    g.strokeStyle=IC.soft; g.lineWidth=1.5;
+    g.beginPath(); g.arc(20,24,17,0,7); g.stroke();
+    g.strokeStyle=IC.line; g.lineWidth=2;
+    g.beginPath(); g.arc(20,24,9,0,7); g.stroke();
+    g.fillStyle=IC.acc; g.beginPath(); g.arc(20,24,4,0,7); g.fill();
+    g.fillStyle=IC.line; g.fillRect(34,36,8,8);
+  },
+  make:function(env){
+    var W=env.W, H=env.H, N=15, CS=28, OX=(W-N*CS)/2, OY=54;
+    var wall=[], bri=[], px=0, py=0, pings=[], cool=0, auto=0, sc=0, time=45, done=false;
+    var exitX=0, exitY=0;
+    function build(){
+      var i, x, y;
+      wall=[]; bri=[];
+      for(i=0;i<N*N;i++){ wall.push(true); bri.push(0); }
+      var stack=[[1,1]];
+      wall[1*N+1]=false;
+      while(stack.length){
+        var c=stack[stack.length-1], cx=c[0], cy=c[1], opts=[];
+        var D=[[2,0],[-2,0],[0,2],[0,-2]];
+        for(i=0;i<4;i++){
+          var nx=cx+D[i][0], ny=cy+D[i][1];
+          if(nx>0&&ny>0&&nx<N-1&&ny<N-1&&wall[ny*N+nx]) opts.push(D[i]);
+        }
+        if(!opts.length){ stack.pop(); continue; }
+        var d=opts[randi(0,opts.length)];
+        wall[(cy+d[1]/2)*N+(cx+d[0]/2)]=false;
+        wall[(cy+d[1])*N+(cx+d[0])]=false;
+        stack.push([cx+d[0], cy+d[1]]);
+      }
+      exitX=N-2; exitY=N-2;
+      px=1*CS+CS/2; py=1*CS+CS/2;
+      pings=[{x:px, y:py, r:0}];
+      auto=0;
+    }
+    build();
+    function hits(x,y){
+      var r=9, a=Math.floor((x-r)/CS), b=Math.floor((x+r)/CS);
+      var c=Math.floor((y-r)/CS), d=Math.floor((y+r)/CS), gx, gy;
+      for(gy=c;gy<=d;gy++) for(gx=a;gx<=b;gx++){
+        if(gx<0||gy<0||gx>=N||gy>=N) return true;
+        if(wall[gy*N+gx]) return true;
+      }
+      return false;
+    }
+    function ping(){
+      if(cool>0) return;
+      cool=0.45;
+      pings.push({x:px, y:py, r:0});
+      if(pings.length>4) pings.shift();
+    }
+    return {
+      key:function(k,d){ if(d && (k===' '||k==='e')) ping(); },
+      tap:function(x,y){ if(y<46 && x>W-96) ping(); },
+      update:function(dt){
+        if(done) return;
+        cool-=dt; auto-=dt; time-=dt;
+        if(time<=0){ done=true; time=0; return env.end('Out of time with '+sc+' cleared'); }
+        if(auto<=0){ auto=1.5; cool=0; ping(); }
+        var dx=(env.keys['arrowright']||env.keys['d']?1:0)-(env.keys['arrowleft']||env.keys['a']?1:0);
+        var dy=(env.keys['arrowdown']||env.keys['s']?1:0)-(env.keys['arrowup']||env.keys['w']?1:0);
+        if(env.ptr.down && env.ptr.y>OY){
+          var tx=env.ptr.x-OX-px, ty=env.ptr.y-OY-py, m=Math.sqrt(tx*tx+ty*ty);
+          if(m>8){ dx=tx/m; dy=ty/m; } else { dx=0; dy=0; }
+        } else if(dx&&dy){ dx*=0.7071; dy*=0.7071; }
+        var nx=px+dx*104*dt; if(!hits(nx,py)) px=nx;
+        var ny=py+dy*104*dt; if(!hits(px,ny)) py=ny;
+        var i, j;
+        for(i=0;i<bri.length;i++) if(bri[i]>0) bri[i]=Math.max(0, bri[i]-dt*0.5);
+        for(i=pings.length-1;i>=0;i--){
+          pings[i].r += 330*dt;
+          if(pings[i].r > 660){ pings.splice(i,1); continue; }
+          var pr=pings[i].r;
+          for(j=0;j<wall.length;j++){
+            if(!wall[j]) continue;
+            var wx=(j%N)*CS+CS/2 - pings[i].x, wy=Math.floor(j/N)*CS+CS/2 - pings[i].y;
+            var d2=Math.sqrt(wx*wx+wy*wy);
+            if(d2 > pr-17 && d2 < pr+17) bri[j]=1;
+          }
+        }
+        for(j=0;j<wall.length;j++){
+          if(!wall[j]) continue;
+          var ax=(j%N)*CS+CS/2-px, ay=Math.floor(j/N)*CS+CS/2-py;
+          if(ax*ax+ay*ay < 1500 && bri[j]<0.4) bri[j]=0.4;
+        }
+        if(Math.abs(px-(exitX*CS+CS/2))<14 && Math.abs(py-(exitY*CS+CS/2))<14){
+          sc++; env.setScore(sc); time += 18; build();
+        }
+      },
+      draw:function(g){
+        g.fillStyle='#0D0F11'; g.fillRect(0,0,W,H);
+        var i;
+        text(g,'CLEARED '+sc, 14, 22, 12, P.ink);
+        text(g, time.toFixed(1)+'s', W-110, 22, 12, time<10?P.hot:P.gold, 'right');
+        fillR(g, W-92, 10, 78, 26, 4, cool>0?P.grid:P.panel);
+        text(g,'PING', W-53, 24, 11, cool>0?P.dim:P.acc, 'center');
+        g.fillStyle=P.grid; g.fillRect(14, 40, W-28, 3);
+        g.fillStyle=P.acc; g.fillRect(14, 40, (W-28)*clamp(time/60,0,1), 3);
+        for(i=0;i<wall.length;i++){
+          if(!wall[i]) continue;
+          g.globalAlpha = 0.03 + bri[i]*0.85;
+          g.fillStyle = bri[i]>0.6 ? P.acc : P.line;
+          g.fillRect(OX+(i%N)*CS, OY+Math.floor(i/N)*CS, CS, CS);
+        }
+        g.globalAlpha=1;
+        for(i=0;i<pings.length;i++){
+          g.globalAlpha = clamp(1-pings[i].r/660, 0, 1)*0.35;
+          g.strokeStyle=P.acc; g.lineWidth=2;
+          g.beginPath(); g.arc(OX+pings[i].x, OY+pings[i].y, pings[i].r, 0, 7); g.stroke();
+        }
+        g.globalAlpha=1;
+        var exx=OX+exitX*CS+CS/2, exy=OY+exitY*CS+CS/2;
+        g.globalAlpha=0.55; g.strokeStyle=P.gold; g.lineWidth=2;
+        g.beginPath(); g.arc(exx, exy, 9, 0, 7); g.stroke();
+        g.globalAlpha=1;
+        g.fillStyle=P.ink; g.beginPath(); g.arc(OX+px, OY+py, 7, 0, 7); g.fill();
+      }
+    };
+  }
 }
 ];
 
